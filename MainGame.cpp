@@ -12,8 +12,7 @@ const int SAUCER_SCORE = 1000;
 const float SAUCER_SPEED_INCREMENT = 5.0f;
 const float LASER_SPEED = 20.0f;
 const int LASER_COST = 100;
-constexpr int MAX_LASERS = 100;
-constexpr int MAX_SAUCERS = 5;
+
 
 
 struct Laser
@@ -29,9 +28,9 @@ struct Saucer
     float saucerRot{ 0 };
     float saucerSpeed = SAUCER_SPEED_INCREMENT;
     bool saucerIsDead{ false };
-    bool active{ false };
     Vector2f velocity{ 0,0 };
 };
+
 
 struct GameState
 {
@@ -39,8 +38,8 @@ struct GameState
     float saucerSpawn{ 0 };
     int score{ 0 };
     Point2f playerPos = PLAYER_START_POS;
-    Laser lasers[MAX_LASERS];
-    Saucer saucers[MAX_SAUCERS];
+    std::vector <Laser> lasers;
+    std::vector <Saucer> saucers;
 };
 
 GameState gState;
@@ -65,24 +64,22 @@ bool MainGameUpdate( float elapsedTime )
     gState.time += elapsedTime;
     gState.saucerSpawn += elapsedTime;
 
+
     if (gState.saucerSpawn > 1.0f)
     {
         gState.saucerSpawn = 0.0f;
-        for (int n = 0; n < MAX_SAUCERS; n++)
-        {
-            Saucer& s = gState.saucers[n];
-            if (s.active == false)
-            {
-                s.active = true;
+
+        
+        Saucer s;
+
                 s.saucerPos = SAUCER_START_POS;
                 s.saucerPos.y = Play::RandomRollRange(-20, 300);
                 s.saucerRot = { 0 };
                 s.saucerSpeed = SAUCER_SPEED_INCREMENT;
                 s.saucerIsDead = { false };
                 s.velocity = { 0,0 };
-                break;
-            }
-        }
+               
+                gState.saucers.push_back(s);
     }
 
     Play::DrawBackground();
@@ -104,6 +101,7 @@ int MainGameExit( void )
 
 void UpdatePlayer( void )
 {
+    int n = 0;
 
     if( Play::KeyDown( VK_LEFT ) )
         gState.playerPos.x -= PLAYER_SPEED;
@@ -113,18 +111,22 @@ void UpdatePlayer( void )
 
     if( Play::KeyPressed( VK_SPACE ) )
     {
-        for (int n = 0; n < MAX_LASERS; n++)
-        {
-            if (gState.lasers[n].laserPos.y <= 0)
-            {
-                gState.lasers[n].laserPos.x = gState.playerPos.x;
-                gState.lasers[n].laserPos.y = gState.playerPos.y - 50;
+        Laser l;
+ 
+                l.laserPos.x = gState.playerPos.x;
+                l.laserPos.y = gState.playerPos.y - 50;
                 if (gState.score >= LASER_COST)
                     gState.score -= LASER_COST;
                 Play::PlayAudio("laser");
-                break;
+               
+            if (l.laserPos.y < 0)
+            {
+                gState.lasers.erase(gState.lasers.begin() + n);
+                n--;
             }
-        }
+
+        n++;
+
     }
 
     float yWobble = sin( gState.time * PLAY_PI ) * 3;
@@ -133,71 +135,69 @@ void UpdatePlayer( void )
 
 void UpdateLaser( void )
 {
-    //for (int i = 0; i < MAX_LASERS; i++)
+    
     for (Laser& l : gState.lasers)
     {
-
-        //Laser& l = gState.lasers[i];
         if (l.laserPos.y > 0.0f)
         {
 
             l.laserPos.y -= LASER_SPEED;
-            for (int j = 0; j < MAX_SAUCERS; j++)
+
+            for (int j = 0; j < gState.saucers.size(); j++)
             {
                 Saucer& s = gState.saucers[j];
-                if (s.active == true)
+
+                if (HasCollided(l.laserPos, s.saucerPos))
                 {
-                    if (HasCollided(l.laserPos, s.saucerPos))
-                    {
-                        l.laserPos.y = -100; // Hide the laser off screen!
-                        s.saucerIsDead = true;
-                        gState.score += SAUCER_SCORE;
-                        s.saucerSpeed += SAUCER_SPEED_INCREMENT;
-                        Play::PlayAudio("clang");
-                    }
+                    gState.lasers.erase(gState.lasers.begin() + 1); // Hide the laser off screen!
+                    s.saucerIsDead = true;
+                    gState.score += SAUCER_SCORE;
+                    s.saucerSpeed += SAUCER_SPEED_INCREMENT;
+                    Play::PlayAudio("clang");
                 }
-            }    
+
+            }
+
             Play::DrawSprite(Play::GetSpriteId("Laser"), l.laserPos, 0);
         }
     }
 }
 
-void UpdateSaucer( void )
+void UpdateSaucer(void)
 {
     const int OFF_SCREEN_TEST = -50;
 
-    for (int n = 0; n < MAX_SAUCERS; n++)
+    for (std::vector<Saucer>::iterator it = gState.saucers.begin(); it != gState.saucers.end();)
     {
-        Saucer& s = gState.saucers[n];
-        if (s.active == true)
+        Saucer& s = *it;
+
+        if (!s.saucerIsDead)
         {
-            //s.saucerPos += s.velocity;
+            s.saucerPos.x -= s.saucerSpeed;
+            s.saucerPos.y += sin(s.saucerPos.x / 100) * 3;
+        }
+        else
+        {
+            s.saucerPos.x -= s.saucerSpeed;
+            s.saucerPos.y += 2;
+            s.saucerRot += 0.01f * s.saucerSpeed;
+        }
 
-            if (!s.saucerIsDead)
-            {
-                s.saucerPos.x -= s.saucerSpeed;
-                s.saucerPos.y += sin(s.saucerPos.x / 100) * 3;
 
-                if (s.saucerPos.x < OFF_SCREEN_TEST)
-                    s.saucerPos = SAUCER_START_POS;
-            }
-            else
-            {
-                s.saucerPos.x -= s.saucerSpeed;
-                s.saucerPos.y += 2;
-                s.saucerRot += 0.01f * s.saucerSpeed;
 
-                if (s.saucerPos.x < OFF_SCREEN_TEST)
-                {
-                    s.active = false;
-                }
-            }
+        Play::DrawSpriteRotated(Play::GetSpriteId("Saucer"), s.saucerPos, 0, s.saucerRot, 1.0f);
 
-            Play::DrawSpriteRotated(Play::GetSpriteId("Saucer"), s.saucerPos, 0, s.saucerRot, 1.0f);
+
+
+        if (s.saucerPos.x < OFF_SCREEN_TEST)
+        {
+            it = gState.saucers.erase(it);
+        }
+        else {
+            ++it;
         }
     }
 }
-
 bool HasCollided( Point2f pos1, Point2f pos2 )
 {
     const float DISTANCE_TEST = 50.0f;
